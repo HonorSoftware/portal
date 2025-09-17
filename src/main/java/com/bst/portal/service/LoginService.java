@@ -22,6 +22,10 @@ public class LoginService {
     private static final String MOBILE_PHONE_PATTERN =
             "^(\\+375)(25|29|33|44)\\d{7}$";
 
+    private static final String EMAIL_PATTERN =
+            "^[a-zA-Z0-9_+&*-]+(?:\\.[a-zA-Z0-9_+&*-]+)*@" +
+                    "(?:[a-zA-Z0-9-]+\\.)+[a-zA-Z]{2,7}$";
+
     private final JdbcTemplate jdbcTemplate;
 
     public LoginService(JdbcTemplate jdbcTemplate) {
@@ -53,7 +57,8 @@ public class LoginService {
             throw new IllegalArgumentException("Для входа требуется номер телефона");
         }
 
-        // Бизнес-логика: проверка существования пользователя, отправка SMS и т.д.
+        // Бизнес-логика
+        // проверяем формат номера телефона
         validatePhoneNumber(details.getPhoneNumber());
 
         //проверка существования пользователя. Если он существует, то для входа ОК - идем дальше
@@ -82,10 +87,11 @@ public class LoginService {
         // Бизнес-логика: проверка уникальности, сохранение данных, отправка SMS
         validatePhoneNumber(details.getPhoneNumber());
 
-        //проверка существования пользователя. Если он существует, то для регистрации NotОК - останавливаемся и возвращаем ошибку
-        //checkUserExistence(details.getPhoneNumber());
-
+        // проверка валидности адреса электронной почты
         validateEmail(details.getEmail());
+
+        // добавление пользователя в статусе NEW
+        addNewUser(loginRequest.getLoginRegistrationDetails());
 
         sendSmsCode(details.getPhoneNumber());
 
@@ -121,7 +127,7 @@ public class LoginService {
         }
     }
 
-    // Методы бизнес-логики (заглушки - нужно реализовать)
+    // Методы бизнес-логики
     private void validatePhoneNumber(String phoneNumber) {
         // Реализация проверки формата номера телефона
 
@@ -138,8 +144,27 @@ public class LoginService {
         }
     }
 
+    private void addNewUser(LoginRegistrationDetails loginRegistrationDetails) {
+        try {
+            String sql = "INSERT INTO bst.users (phone_number, role, email, lessor_name, lessor_unp, lessor_region) VALUES (?, ?, ?, ?, ?, ?)";
+            jdbcTemplate.update(sql, loginRegistrationDetails.getPhoneNumber(), loginRegistrationDetails.getRole(), loginRegistrationDetails.getEmail(), loginRegistrationDetails.getLessorsName(), loginRegistrationDetails.getLessorUnp(), loginRegistrationDetails.getLessorRegion());
+        } catch (Exception e) {
+            System.out.println("Ошибка при вставке в БД");
+            throw new RuntimeException(e);
+        }
+    }
+
     private void validateEmail(String email) {
         // Реализация проверки формата email
+        var isEmailValid = false;
+        Pattern pattern = Pattern.compile(EMAIL_PATTERN);
+        Matcher matcher = pattern.matcher(email);
+
+        isEmailValid = matcher.matches();
+
+        if (!isEmailValid) {
+            throw new IllegalArgumentException("Не корректный формат адреса электронной почты");
+        }
     }
 
     private void checkUserExistence(String phoneNumber) throws FileNotFoundException {
@@ -171,6 +196,7 @@ public class LoginService {
             String sql = "INSERT INTO bst.sms_codes (phone_number, sms_code, valid_until) VALUES (?, ?, ?)";
             jdbcTemplate.update(sql, phoneNumber, smsCode, LocalDateTime.now().plusMinutes(5));
         } catch (Exception e) {
+            System.out.println("Ошибка при попытке добавить СМС в таблицу");
             throw new RuntimeException(e);
         }
         // 3. отправляем SMS - интеграция с SMSp.by
