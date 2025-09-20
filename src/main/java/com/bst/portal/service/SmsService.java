@@ -6,6 +6,8 @@ import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
+import java.security.SecureRandom;
+import java.util.Base64;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -38,11 +40,30 @@ public class SmsService {
     }
 
     public SmsResponse handleEntrySmsRequest(SmsRequest smsRequest) {
-        return new SmsResponse(isSmsCodeValid(smsRequest.getSmsCode(), smsRequest.getPhoneNumber()), generateToken());
+
+        String userRole = receiveRole(smsRequest.getPhoneNumber());
+
+        boolean isSmsCodeValid = isSmsCodeValid(smsRequest.getSmsCode(), smsRequest.getPhoneNumber());
+
+        if (isSmsCodeValid) {
+            return new SmsResponse(isSmsCodeValid(smsRequest.getSmsCode(), smsRequest.getPhoneNumber()), generateToken(smsRequest.getPhoneNumber(), userRole));
+        } else {
+            return new SmsResponse(isSmsCodeValid(smsRequest.getSmsCode(), smsRequest.getPhoneNumber()), null);
+        }
     }
 
     public SmsResponse handleRegistrationSmsRequest(SmsRequest smsRequest) {
-        return new SmsResponse(isSmsCodeValid(smsRequest.getSmsCode(), smsRequest.getPhoneNumber()), generateToken());
+
+        String userRole = receiveRole(smsRequest.getPhoneNumber());
+
+        boolean isSmsCodeValid = isSmsCodeValid(smsRequest.getSmsCode(), smsRequest.getPhoneNumber());
+
+        if (isSmsCodeValid) {
+            updateUserStatusByPhone(smsRequest.getPhoneNumber());
+            return new SmsResponse(isSmsCodeValid(smsRequest.getSmsCode(), smsRequest.getPhoneNumber()), generateToken(smsRequest.getPhoneNumber(), userRole));
+        } else {
+            return new SmsResponse(isSmsCodeValid(smsRequest.getSmsCode(), smsRequest.getPhoneNumber()), null);
+        }
     }
 
     private void validatePhoneNumber(String phoneNumber) {
@@ -75,8 +96,38 @@ public class SmsService {
         }
     }
 
-    private String generateToken() {
-        return "generated_token_" + System.currentTimeMillis();
+    private String receiveRole(String phoneNumber) {
+
+        String sql = "SELECT role FROM bst.users WHERE phone_number = ?";
+
+        try {
+            return jdbcTemplate.queryForObject(sql, new Object[]{phoneNumber},
+                    (rs, rowNum) -> rs.getString("role"));
+        } catch (EmptyResultDataAccessException e) {
+            throw new IllegalArgumentException("Не найден пользователь с таким номером телефона");
+        }
+    }
+
+    private String generateToken(String phoneNumber, String userRole) {
+
+        String notCodedToken = phoneNumber + "-" + userRole + "-" + generateAlphabetString(10);
+        return Base64.getEncoder().encodeToString(notCodedToken.getBytes());
+    }
+
+    public String generateAlphabetString(int length) {
+        String letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+        SecureRandom random = new SecureRandom();
+        StringBuilder sb = new StringBuilder(length);
+
+        for (int i = 0; i < length; i++) {
+            sb.append(letters.charAt(random.nextInt(letters.length())));
+        }
+        return sb.toString();
+    }
+
+    public void updateUserStatusByPhone(String phoneNumber) {
+        String sql = "UPDATE bst.users SET status = 'ACTIVE' WHERE phone_number = ?";
+        jdbcTemplate.update(sql, phoneNumber);
     }
 
 }
