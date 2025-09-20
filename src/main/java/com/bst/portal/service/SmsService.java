@@ -7,6 +7,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import java.security.SecureRandom;
+import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -41,28 +42,36 @@ public class SmsService {
 
     public SmsResponse handleEntrySmsRequest(SmsRequest smsRequest) {
 
+        String token = null;
+
         String userRole = receiveRole(smsRequest.getPhoneNumber());
 
         boolean isSmsCodeValid = isSmsCodeValid(smsRequest.getSmsCode(), smsRequest.getPhoneNumber());
 
         if (isSmsCodeValid) {
-            return new SmsResponse(isSmsCodeValid(smsRequest.getSmsCode(), smsRequest.getPhoneNumber()), generateToken(smsRequest.getPhoneNumber(), userRole));
+            token = generateToken(smsRequest.getPhoneNumber(), userRole);
+            addToken(token);
+            return new SmsResponse(isSmsCodeValid(smsRequest.getSmsCode(), smsRequest.getPhoneNumber()), token);
         } else {
-            return new SmsResponse(isSmsCodeValid(smsRequest.getSmsCode(), smsRequest.getPhoneNumber()), null);
+            return new SmsResponse(isSmsCodeValid(smsRequest.getSmsCode(), smsRequest.getPhoneNumber()), token);
         }
     }
 
     public SmsResponse handleRegistrationSmsRequest(SmsRequest smsRequest) {
 
+        String token = null;
+
         String userRole = receiveRole(smsRequest.getPhoneNumber());
 
         boolean isSmsCodeValid = isSmsCodeValid(smsRequest.getSmsCode(), smsRequest.getPhoneNumber());
 
         if (isSmsCodeValid) {
+            token = generateToken(smsRequest.getPhoneNumber(), userRole);
             updateUserStatusByPhone(smsRequest.getPhoneNumber());
-            return new SmsResponse(isSmsCodeValid(smsRequest.getSmsCode(), smsRequest.getPhoneNumber()), generateToken(smsRequest.getPhoneNumber(), userRole));
+            addToken(token);
+            return new SmsResponse(isSmsCodeValid(smsRequest.getSmsCode(), smsRequest.getPhoneNumber()), token);
         } else {
-            return new SmsResponse(isSmsCodeValid(smsRequest.getSmsCode(), smsRequest.getPhoneNumber()), null);
+            return new SmsResponse(isSmsCodeValid(smsRequest.getSmsCode(), smsRequest.getPhoneNumber()), token);
         }
     }
 
@@ -127,7 +136,22 @@ public class SmsService {
 
     public void updateUserStatusByPhone(String phoneNumber) {
         String sql = "UPDATE bst.users SET status = 'ACTIVE' WHERE phone_number = ?";
-        jdbcTemplate.update(sql, phoneNumber);
+
+        try {
+            jdbcTemplate.update(sql, phoneNumber);
+        } catch (EmptyResultDataAccessException e) {
+            throw new IllegalArgumentException("Не удалось обновить статус пользователя");
+        }
+    }
+
+    public void addToken(String token) {
+        String sql = "INSERT INTO bst.tokens VALUES (?, ?)";
+
+        try {
+            jdbcTemplate.update(sql, token, LocalDateTime.now().plusHours(24));
+        } catch (EmptyResultDataAccessException e) {
+            throw new IllegalArgumentException("Не удалось добавить токен в таблицу");
+        }
     }
 
 }
